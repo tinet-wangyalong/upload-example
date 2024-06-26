@@ -7,17 +7,13 @@
       <el-button @click="handlePause">pause</el-button>
       <el-button @click="handleDelete">delete</el-button>
     </div>
-    <!-- <div>
+    <div>
       <div>
-        <div>calculate chunk hash</div>
-        <el-progress :percentage="hashPercentage"></el-progress>
-      </div>
-      <div>
-        <div>percentage</div>
-        <el-progress :percentage="fakeUploadPercentage"></el-progress>
+        <div>上传进度</div>
+        <el-progress :percentage="info.hashPercentage"></el-progress>
       </div>
     </div>
-    <el-table :data="data">
+    <el-table :data="info.fileData">
       <el-table-column
         prop="hash"
         label="chunk hash"
@@ -25,7 +21,7 @@
       ></el-table-column>
       <el-table-column label="size(KB)" align="center" width="120">
         <template v-slot="{ row }">
-          {{ transformByte.value(row.size) }}
+          {{ transformByte(row.size) }}
         </template>
       </el-table-column>
       <el-table-column label="percentage" align="center">
@@ -36,12 +32,13 @@
           ></el-progress>
         </template>
       </el-table-column>
-    </el-table> -->
+    </el-table>
   </div>
 </template>
 
 <script lang="ts">
 import { computed, defineComponent, reactive } from "vue";
+import { ElMessage } from "element-plus";
 import { request } from "./tool";
 
 export default defineComponent({
@@ -65,19 +62,18 @@ export default defineComponent({
       };
     });
 
-    // const resetData = () => {
-    //   this.requestList.forEach(xhr => xhr?.abort());
-    //   this.requestList = [];
-    //   if (this.container.worker) {
-    //     this.container.worker.onmessage = null;
-    //   }
-    // };
+    const resetData = () => {
+      info.requestList.forEach((xhr: any) => xhr?.abort());
+      info.requestList = [];
+      if (info.container.worker) {
+        info.container.worker.onmessage = null;
+      }
+    };
     // 获取文件
     const handleFileChange = (e: any) => {
       const [file] = e.target.files;
       if (!file) return;
-      // resetData();
-      // Object.assign(this.$data, this.$options.data());
+      resetData();
       info.container.file = file;
     };
 
@@ -87,6 +83,10 @@ export default defineComponent({
       const fileChunkList = [];
       let cur = 0;
       while (cur < file.size) {
+        /**
+         * 为什么file可以使用slice方法？
+         * 因为 file 是 File 对象，而 File 对象继承自 Blob 对象；Blob 对象有 slice 方法，可以用来切分数据。
+         */
         fileChunkList.push({ file: file.slice(cur, cur + size) });
         cur += size;
       }
@@ -129,6 +129,7 @@ export default defineComponent({
       const fileChunkList = createFileChunk(info.container.file);
       // 文件的进度和hash
       info.container.hash = await calculateHash(fileChunkList);
+      console.log(info.container.hash + "1111111");
 
       const { shouldUpload, uploadedList } = await verifyUpload(
         info.container.file.name,
@@ -136,7 +137,10 @@ export default defineComponent({
       );
 
       if (!shouldUpload) {
-        alert("跳过上传：文件上传成功，查看/目标目录");
+        ElMessage({
+          message: "跳过上传：文件上传成功，查看/目标目录",
+          type: "success",
+        });
         info.status = "wait";
         return;
       }
@@ -171,7 +175,10 @@ export default defineComponent({
           filename: info.container.file.name,
         }),
       });
-      alert("文件上传成功，查看/目标目录");
+      ElMessage({
+        message: "文件上传成功，查看/目标目录",
+        type: "success",
+      });
       info.status = "wait";
     };
 
@@ -204,16 +211,33 @@ export default defineComponent({
       }
     };
 
-    const handleResume = () => {
-      console.log(2222);
+    // 暂停恢复
+    const handleResume = async () => {
+      info.status = "uploading";
+      console.log(info.container.hash + "2222222");
+      const { uploadedList } = await verifyUpload(
+        info.container.file.name,
+        info.container.hash
+      );
+      await uploadChunks(uploadedList);
     };
 
+    // 暂停
     const handlePause = () => {
-      console.log(3333);
+      info.status = "pause";
+      resetData();
     };
 
-    const handleDelete = () => {
-      console.log(4444);
+    const handleDelete = async () => {
+      const { data } = await request({
+        url: "http://localhost:3003/delete",
+      });
+      if (JSON.parse(data).code === 0) {
+        ElMessage({
+          message: "删除成功",
+          type: "success",
+        });
+      }
     };
 
     return {
@@ -223,6 +247,7 @@ export default defineComponent({
       handleResume,
       handlePause,
       handleDelete,
+      info,
     };
   },
 });
